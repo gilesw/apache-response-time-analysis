@@ -4,7 +4,7 @@ require 'bundler/setup'
 require 'English'
 require 'trollop'
 require 'apache_log_regex'
-require 'date'
+require 'pony'
 
 # http://stackoverflow.com/questions/11784843/calculate-95th-percentile-in-ruby
 def percentile(values, percentile)
@@ -17,6 +17,7 @@ end
 # FIXME: no shelling out
 # Combine multiple files and return a single string variable
 def filter_accesslog(accesslogpattern, filter)
+  verbose("gzip -cdfq #{accesslogpattern} | grep #{filter}")
   return `gzip -cdfq #{accesslogpattern} | grep #{filter}`
 end
 
@@ -32,6 +33,16 @@ end
 def verbose(msg)
   puts msg if $verbose
 end
+
+def send_mail(msg,recipients)
+  Pony.mail(
+    :via => :sendmail ,
+    :to => recipients,
+    :subject => "Apache response results",
+    :body => msg
+  )
+end
+
 
 # http://trollop.rubyforge.org/trollop/Trollop/Parser.html
 opts = Trollop::options do
@@ -59,6 +70,7 @@ opts = Trollop::options do
   opt :logformat, "Apache log format", :default => '%h %l %u %t \"%r\" %>s %b %D \"%{Referer}i\" \"%{User-Agent}i\"'
   opt :filter,    "Filter access logs based on a string", :default => '.'
   opt :verbose,    "Enable verbose mode", :default => false
+  opt :recipients,    "Recipients for email output", :type => :string
 end
 
 if opts[:verbose]
@@ -92,9 +104,16 @@ end
 
 
 ######################################
-puts "Total number of response times recorded:"
-puts response_times.size
-puts "95th percentile of those values in milliseconds:"
-puts percentile(response_times,0.95)
+results = []
+results << "Total number of response times recorded:  "
+results << response_times.size.to_s
+results << " | "
+results << "95th percentile of those values in milliseconds:  "
+results << percentile(response_times,0.95).to_s
+results.join("\n")
 
+puts results
 
+if ! opts[:recipients].nil?
+    send_mail(results,opts[:recipients])
+end
