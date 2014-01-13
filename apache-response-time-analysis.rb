@@ -7,27 +7,43 @@ require 'apache_log_regex'
 require 'pony'
 
 # http://stackoverflow.com/questions/11784843/calculate-95th-percentile-in-ruby
-def percentile(values, percentile)
+# http://support.microsoft.com/default.aspx?scid=kb;en-us;Q103493.
+def percentile_excel(values, percentile)
     values_sorted = values.sort
     k = (percentile*(values_sorted.length-1)+1).floor - 1
     f = (percentile*(values_sorted.length-1)+1).modulo(1)
     return values_sorted[k] + (f * (values_sorted[k+1] - values_sorted[k]))
 end
 
+# Return an actual datapoint in a dataset that is a specified
+def percentile_by_count(array,percentile)
+  count = (array.length * (percentile)).floor
+  verbose "Array entry at 95th percentile: #{count-1}"
+  array.sort[count-1]
+end
+
 # FIXME: no shelling out
 # Combine multiple files and return a single string variable
 def filter_accesslog(accesslogpattern, filter)
-  verbose("gzip -cdfq #{accesslogpattern} | grep #{filter}")
+  verbose "Filter being run:"
+  verbose "gzip -cdfq #{accesslogpattern} | grep #{filter}"
   return `gzip -cdfq #{accesslogpattern} | grep #{filter}`
+  verbose " "
 end
 
+# FIXME: no shelling out
 def test_accesslogpattern(accesslogpattern)
-  `ls #{accesslogpattern} >/dev/null 2>&1`
+  verbose " "
+  file_matches = `ls #{accesslogpattern} 2>1`
   if $CHILD_STATUS != 0
     puts "ls #{accesslogpattern} matched nothing"
     puts "Have you enabled the wildcard option?"
     exit
+  else
+    verbose "Log files matched:"
+    verbose file_matches
   end
+  verbose " "
 end
 
 def verbose(msg)
@@ -35,14 +51,80 @@ def verbose(msg)
 end
 
 def send_mail(msg,recipients)
-  Pony.mail(
-    :via => :sendmail ,
-    :to => recipients,
-    :subject => "Apache response results",
-    :body => msg
-  )
+  if ! recipients.nil?
+    Pony.mail(
+      :via => :sendmail ,
+      :to => recipients,
+      :subject => "Apache response time analysis",
+      :body => msg
+    )
+  end
 end
 
+def setup_verbose(verbose_setting)
+  if verbose_setting
+    $verbose = true
+  else
+    $verbose = false
+  end
+end
+
+def output_example_calculations(example_opt)
+  if example_opt
+    dummy_response_times = [1,2,3,4,5,6,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,100]
+    puts "This is the dummy dataset:"
+    p dummy_response_times
+    puts "Excel method:"
+    puts percentile_excel(dummy_response_times,0.95)
+    puts "Count method:"
+    puts percentile_by_count(dummy_response_times,0.9)
+    exit
+  end
+end
+
+def build_accesslog_pattern(accesslogpath_opt,datepattern_opt,wildcard_opt)
+  if ! datepattern_opt.nil?
+    date = Time.now.strftime(datepattern_opt)
+    accesslogpattern = "#{accesslogpath_opt}*#{date}"
+  else
+    accesslogpattern = accesslogpath_opt
+  end
+  if wildcard_opt
+    accesslogpattern += '*'
+  end
+  return accesslogpattern
+end
+
+def extract_response_times_from_apache_accesslog(accesslog_lines,logformat)
+  parser = ApacheLogRegex.new(logformat)
+  response_times = Array.new
+  accesslog_lines.split("\n").each do | line|
+    response_times.push ( parser.parse(line)['%D'].to_f / 1000)
+  end
+  return response_times
+end
+
+def build_response_time_analysis(response_times)
+  results = []
+  results << "Total number of response times recorded:  "
+  results << response_times.size.to_s
+  if $verbose
+    results << response_times.inspect
+  end
+  results << "   "
+  results << "95th percentile of those values in milliseconds:  "
+  results << "Excel quartile method:"
+  results << percentile_excel(response_times,0.95).to_s
+  results << "Count method:"
+  results << percentile_by_count(response_times,0.95).to_s
+  results.join("\n")
+end
+
+def display_response_time_analysis(response_time_analysis,email_recipients)
+  if email_recipients.nil?
+    puts response_time_analysis
+  end
+end
 
 # http://trollop.rubyforge.org/trollop/Trollop/Parser.html
 opts = Trollop::options do
@@ -70,50 +152,31 @@ opts = Trollop::options do
   opt :logformat, "Apache log format", :default => '%h %l %u %t \"%r\" %>s %b %D \"%{Referer}i\" \"%{User-Agent}i\"'
   opt :filter,    "Filter access logs based on a string", :default => '.'
   opt :verbose,    "Enable verbose mode", :default => false
-  opt :recipients,    "Recipients for email output", :type => :string
+  opt :example,    "Test the percentile methods with a dummy set of values", :default => false
+  opt :email_recipients,    "Recipients for email output", :type => :string
 end
+setup_verbose(opts[:verbose])
 
-if opts[:verbose]
-  $verbose = true
-else
-  $verbose = false
-end
+output_example_calculations(opts[:example])
 
-# Build up the pattern used to match the log files
-if ! opts[:datepattern].nil?
-  date = Time.now.strftime(opts[:datepattern])
-  accesslogpattern = "#{opts[:accesslogpath]}*#{date}"
-else
-  accesslogpattern = opts[:accesslogpath]
-end
-if opts[:wildcard]
-  accesslogpattern += '*'
-end
-
+# Source access logs on filesystem
+accesslogpattern = build_accesslog_pattern(opts[:accesslogpath],opts[:datepattern],opts[:wildcard])
 test_accesslogpattern(accesslogpattern)
 
+# Filter the accesslogs
 accesslog_lines = filter_accesslog(accesslogpattern,opts[:filter])
 
-# Configure the Apache access log parser with our log format
-parser = ApacheLogRegex.new(opts[:logformat])
+# Extract any log fields
+response_times = extract_response_times_from_apache_accesslog(accesslog_lines,opts[:logformat])
 
-response_times = Array.new
-accesslog_lines.split("\n").each do | line|
-  response_times.push ( parser.parse(line)['%D'].to_f / 1000)
-end
+# Build up analysis
+response_time_analysis = build_response_time_analysis(response_times)
+
+# Optionally display the analysis on stdout
+display_response_time_analysis(response_time_analysis,opts[:recipients])
+
+# Optionally deliver results via email
+send_mail(response_time_analysis,opts[:recipients])
 
 
-######################################
-results = []
-results << "Total number of response times recorded:  "
-results << response_times.size.to_s
-results << " | "
-results << "95th percentile of those values in milliseconds:  "
-results << percentile(response_times,0.95).to_s
-results.join("\n")
 
-puts results
-
-if ! opts[:recipients].nil?
-    send_mail(results,opts[:recipients])
-end
