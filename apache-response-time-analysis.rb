@@ -51,8 +51,11 @@ end
 
 def send_mail(msg,recipients)
   if ! recipients.nil?
+    hostname = Socket.gethostbyname(Socket.gethostname).first
+    user = ENV['USER']
     Pony.mail(
-      :via => :sendmail ,
+      :via => :sendmail,
+      :from => "#{user}@#{hostname}",
       :to => recipients,
       :subject => "Apache response time analysis",
       :body => msg
@@ -172,10 +175,10 @@ response_times = extract_response_times_from_apache_accesslog(accesslog_lines,op
 response_time_analysis = build_response_time_analysis(response_times)
 
 # Optionally display the analysis on stdout
-display_response_time_analysis(response_time_analysis,opts[:recipients])
+display_response_time_analysis(response_time_analysis,opts[:email_recipients])
 
 # Optionally deliver results via email
-send_mail(response_time_analysis,opts[:recipients])
+send_mail(response_time_analysis,opts[:email_recipients])
 
 
 
