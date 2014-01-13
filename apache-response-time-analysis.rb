@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require 'rubygems' if RUBY_VERSION < '1.9.0
+require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'English'
 require 'trollop'
 require 'apache_log_regex'
