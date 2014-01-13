@@ -26,8 +26,8 @@ end
 # Combine multiple files and return a single string variable
 def filter_accesslog(accesslogpattern, filter)
   verbose "Filter being run:"
-  verbose "gzip -cdfq #{accesslogpattern} | grep #{filter}"
-  return `gzip -cdfq #{accesslogpattern} | grep #{filter}`
+  verbose "nice gzip -cdfq #{accesslogpattern} | nice grep #{filter}"
+  return `nice gzip -cdfq #{accesslogpattern} | nice grep #{filter}`
   verbose " "
 end
 
