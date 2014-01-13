@@ -33,7 +33,7 @@ end
 # FIXME: no shelling out
 def test_accesslogpattern(accesslogpattern)
   verbose " "
-  file_matches = `ls #{accesslogpattern} 2>1`
+  file_matches = `ls #{accesslogpattern} 2>&1`
   if $CHILD_STATUS != 0
     puts "ls #{accesslogpattern} matched nothing"
     puts "Have you enabled the wildcard option?"
