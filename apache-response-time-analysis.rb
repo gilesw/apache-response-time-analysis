@@ -1,6 +1,5 @@
 #!/usr/bin/env ruby
-require 'rubygems'
-require 'bundler/setup'
+require 'rubygems' if RUBY_VERSION < '1.9.0
 require 'English'
 require 'trollop'
 require 'apache_log_regex'
@@ -99,7 +98,7 @@ def extract_response_times_from_apache_accesslog(accesslog_lines,logformat)
   parser = ApacheLogRegex.new(logformat)
   response_times = Array.new
   accesslog_lines.split("\n").each do | line|
-    response_times.push ( parser.parse(line)['%D'].to_f / 1000)
+    response_times.push( parser.parse(line)['%D'].to_f / 1000)
   end
   return response_times
 end
