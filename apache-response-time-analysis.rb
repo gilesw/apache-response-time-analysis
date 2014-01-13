@@ -49,14 +49,12 @@ def verbose(msg)
   puts msg if $verbose
 end
 
-def send_mail(msg,recipients)
-  if ! recipients.nil?
-    hostname = Socket.gethostbyname(Socket.gethostname).first
-    user = ENV['USER']
+def send_mail(msg,email_recipients,email_from)
+  if ! email_recipients.nil?
     Pony.mail(
       :via => :sendmail,
-      :from => "#{user}@#{hostname}",
-      :to => recipients,
+      :from => email_from,
+      :to => email_recipients,
       :subject => "Apache response time analysis",
       :body => msg
     )
@@ -106,8 +104,11 @@ def extract_response_times_from_apache_accesslog(accesslog_lines,logformat)
   return response_times
 end
 
-def build_response_time_analysis(response_times)
+def build_response_time_analysis(response_times,datepattern_opt)
   results = []
+  if ! datepattern_opt.nil?
+    results << "Response time results for #{Time.now.strftime(datepattern_opt)}"
+  end
   results << "Total number of response times recorded:  "
   results << response_times.size.to_s
   if $verbose
@@ -156,6 +157,7 @@ opts = Trollop::options do
   opt :verbose,    "Enable verbose mode", :default => false
   opt :example,    "Test the percentile methods with a dummy set of values", :default => false
   opt :email_recipients,    "Recipients for email output", :type => :string
+  opt :email_from,    "From field for email output", :type => :string , :default => "#{ENV['USER']}@#{Socket.gethostbyname(Socket.gethostname).first}"
 end
 setup_verbose(opts[:verbose])
 
@@ -172,13 +174,13 @@ accesslog_lines = filter_accesslog(accesslogpattern,opts[:filter])
 response_times = extract_response_times_from_apache_accesslog(accesslog_lines,opts[:logformat])
 
 # Build up analysis
-response_time_analysis = build_response_time_analysis(response_times)
+response_time_analysis = build_response_time_analysis(response_times,opts[:datepattern])
 
 # Optionally display the analysis on stdout
 display_response_time_analysis(response_time_analysis,opts[:email_recipients])
 
 # Optionally deliver results via email
-send_mail(response_time_analysis,opts[:email_recipients])
+send_mail(response_time_analysis,opts[:email_recipients],opts[:email_from])
 
 
 
